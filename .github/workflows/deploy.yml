@@ -3,6 +3,13 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ['main']
+    paths-ignore:
+      - 'README.md'
+      - '**.md'
+      - '.gitignore'
+      - '.oxlintrc.json'
+      - 'LICENSE*'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:

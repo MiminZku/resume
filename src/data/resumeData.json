@@ -136,7 +136,7 @@
   ],
   "certifications": [
     { "name": "AI-901: Microsoft Certified Azure AI Fundamentals", "issuer": "Microsoft", "date": "2026.08" },
-    { "name": "정보처리기사", "issuer": "한국산업인력공단", "date": "2022.09" },
+    { "name": "정보처리기사", "issuer": "한국산업인력공단", "date": "2022.09" }
   ],
   "awards": [
     { "title": "SeSAC AI+ 아카데미 MS AI 엔지니어 과정 최종 프로젝트 최우수상", "date": "2026.08" },

@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import resumeData from './data/resumeData.json'
+
+// Target SHA-256 Hash provided by user
+const ADMIN_HASH = '5421e9ff1712278b3df88c08937bc8f0b1d272b2a22abd869e9cfa565f092e14'
 
 const TAB_CONFIG = {
   all: { label: '🌐 전체 마스터', title: 'Software Engineer (AI Backend / Cloud / Systems)' },
@@ -8,10 +11,73 @@ const TAB_CONFIG = {
   cloud: { label: '☁️ 클라우드 엔지니어', title: 'Cloud & Infrastructure Engineer' },
 }
 
+// SHA-256 hash helper using Web Crypto API
+async function computeSha256(text) {
+  const buffer = new TextEncoder().encode(text)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('all')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [authError, setAuthError] = useState('')
 
   const { basicInfo, summaries, techStack, experience, education, certifications, awards } = resumeData
+
+  // Check initial authentication and #edit hash
+  useEffect(() => {
+    const storedAuth = localStorage.getItem('resume_admin_auth') === 'true'
+    if (storedAuth) {
+      setIsAdmin(true)
+    }
+
+    const checkHash = () => {
+      if (window.location.hash.toLowerCase().includes('edit')) {
+        setShowAuthModal(true)
+        setPasswordInput('')
+        setAuthError('')
+      }
+    }
+
+    checkHash()
+    window.addEventListener('hashchange', checkHash)
+    return () => window.removeEventListener('hashchange', checkHash)
+  }, [])
+
+  // Handle password submission
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault()
+    if (!passwordInput.trim()) return
+
+    try {
+      const hashedInput = await computeSha256(passwordInput.trim())
+      if (hashedInput === ADMIN_HASH.toLowerCase()) {
+        setIsAdmin(true)
+        localStorage.setItem('resume_admin_auth', 'true')
+        setShowAuthModal(false)
+        setPasswordInput('')
+        setAuthError('')
+        // Clean up #edit from URL bar cleanly
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        }
+      } else {
+        setAuthError('비밀번호가 일치하지 않습니다.')
+      }
+    } catch (err) {
+      setAuthError('인증 중 오류가 발생했습니다.')
+    }
+  }
+
+  // Handle logout (switch back to visitor view)
+  const handleLogout = () => {
+    setIsAdmin(false)
+    localStorage.removeItem('resume_admin_auth')
+  }
 
   // Active tab settings
   const currentSummary = summaries[activeTab] || summaries.all
@@ -30,36 +96,99 @@ export default function App() {
 
   return (
     <div className="resume-container">
-      {/* Screen Only Control Bar */}
-      <header className="control-bar">
-        <div className="tab-group" role="tablist" aria-label="직무 선택">
-          {Object.entries(TAB_CONFIG).map(([key, config]) => (
-            <button
-              key={key}
-              type="button"
-              className={`tab-btn ${activeTab === key ? 'active' : ''}`}
-              onClick={() => setActiveTab(key)}
-            >
-              {config.label}
-            </button>
-          ))}
+      {/* Password Authentication Modal (Triggered by /#edit) */}
+      {showAuthModal && (
+        <div className="modal-backdrop" onClick={() => setShowAuthModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>🔒 관리자 인증</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowAuthModal(false)}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="modal-desc">
+              이력서 관리 기능(직무 탭 전환, A4 PDF 인쇄, 데이터 편집)에 접근하려면 비밀번호를 입력하세요.
+            </p>
+            <form onSubmit={handleAuthSubmit}>
+              <input
+                type="password"
+                className="modal-input"
+                placeholder="비밀번호 입력"
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value)
+                  setAuthError('')
+                }}
+                autoFocus
+              />
+              {authError && <div className="modal-error">{authError}</div>}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="modal-cancel-btn"
+                  onClick={() => setShowAuthModal(false)}
+                >
+                  취소
+                </button>
+                <button type="submit" className="modal-submit-btn">
+                  인증하기
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
+      )}
 
-        <div className="action-group">
-          <button type="button" className="action-btn btn-print" onClick={handlePrint} title="현재 탭 상태로 A4 PDF 저장">
-            📄 PDF 인쇄 / 저장
-          </button>
-          <a
-            href={basicInfo.repoEditUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="action-btn btn-edit"
-            title="GitHub 웹 에디터에서 JSON 직접 수정"
-          >
-            ✏️ 데이터 수정
-          </a>
-        </div>
-      </header>
+      {/* Screen Only Control Bar (ONLY visible to Admin) */}
+      {isAdmin && (
+        <header className="control-bar">
+          <div className="tab-group" role="tablist" aria-label="직무 선택">
+            {Object.entries(TAB_CONFIG).map(([key, config]) => (
+              <button
+                key={key}
+                type="button"
+                className={`tab-btn ${activeTab === key ? 'active' : ''}`}
+                onClick={() => setActiveTab(key)}
+              >
+                {config.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="action-group">
+            <button
+              type="button"
+              className="action-btn btn-print"
+              onClick={handlePrint}
+              title="현재 탭 상태로 A4 PDF 저장"
+            >
+              📄 PDF 인쇄 / 저장
+            </button>
+            <a
+              href={basicInfo.repoEditUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="action-btn btn-edit"
+              title="GitHub 웹 에디터에서 JSON 직접 수정"
+            >
+              ✏️ 데이터 수정
+            </a>
+            <button
+              type="button"
+              className="action-btn btn-logout"
+              onClick={handleLogout}
+              title="일반 방문자 뷰로 전환"
+            >
+              🔓 관리자 끄기
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Printable Resume Paper */}
       <main className="resume-paper">
@@ -67,14 +196,31 @@ export default function App() {
         <header className="resume-header">
           <div className="header-top">
             <div className="name-block">
-              <h1>{basicInfo.name} <span style={{ fontSize: '18px', fontWeight: 500, color: '#64748b' }}>({basicInfo.nameEn})</span></h1>
+              <h1>
+                {basicInfo.name}{' '}
+                <span style={{ fontSize: '18px', fontWeight: 500, color: '#64748b' }}>
+                  ({basicInfo.nameEn})
+                </span>
+              </h1>
               <div className="role-title">{currentRoleTitle}</div>
             </div>
             <div className="contact-block">
-              <div>📧 <a href={`mailto:${basicInfo.email}`}>{basicInfo.email}</a></div>
+              <div>
+                📧 <a href={`mailto:${basicInfo.email}`}>{basicInfo.email}</a>
+              </div>
               <div>📱 {basicInfo.phone}</div>
-              <div>🐙 <a href={basicInfo.github} target="_blank" rel="noopener noreferrer">GitHub 프로필</a></div>
-              <div>📑 <a href={basicInfo.portfolio} target="_blank" rel="noopener noreferrer">Notion 포트폴리오</a></div>
+              <div>
+                🐙{' '}
+                <a href={basicInfo.github} target="_blank" rel="noopener noreferrer">
+                  GitHub 프로필
+                </a>
+              </div>
+              <div>
+                📑{' '}
+                <a href={basicInfo.portfolio} target="_blank" rel="noopener noreferrer">
+                  Notion 포트폴리오
+                </a>
+              </div>
             </div>
           </div>
         </header>
@@ -83,7 +229,11 @@ export default function App() {
         <section className="resume-section">
           <h2 className="section-title">
             About Me
-            <span className="badge-tag">{TAB_CONFIG[activeTab]?.label.replace(/^[^\s]+\s/, '')} 맞춤 요약</span>
+            {isAdmin && (
+              <span className="badge-tag">
+                {TAB_CONFIG[activeTab]?.label.replace(/^[^\s]+\s/, '')} 맞춤 요약
+              </span>
+            )}
           </h2>
           <p className="summary-text">{currentSummary}</p>
         </section>
@@ -95,28 +245,36 @@ export default function App() {
             <div className="tech-label">Languages</div>
             <div className="tech-tags">
               {techStack.languages.map((item, i) => (
-                <span key={i} className="tag">{item}</span>
+                <span key={i} className="tag">
+                  {item}
+                </span>
               ))}
             </div>
 
             <div className="tech-label">Backend & Cloud</div>
             <div className="tech-tags">
               {techStack.backendCloud.map((item, i) => (
-                <span key={i} className="tag">{item}</span>
+                <span key={i} className="tag">
+                  {item}
+                </span>
               ))}
             </div>
 
             <div className="tech-label">Systems & AI</div>
             <div className="tech-tags">
               {techStack.systemsAI.map((item, i) => (
-                <span key={i} className="tag">{item}</span>
+                <span key={i} className="tag">
+                  {item}
+                </span>
               ))}
             </div>
 
             <div className="tech-label">Tools & VCS</div>
             <div className="tech-tags">
               {techStack.tools.map((item, i) => (
-                <span key={i} className="tag">{item}</span>
+                <span key={i} className="tag">
+                  {item}
+                </span>
               ))}
             </div>
           </div>
@@ -149,7 +307,7 @@ export default function App() {
         <section className="resume-section">
           <h2 className="section-title">
             Key Projects
-            <span className="badge-tag">우선순위 자동 정렬됨</span>
+            {isAdmin && <span className="badge-tag">우선순위 자동 정렬됨</span>}
           </h2>
 
           {sortedProjects.map((proj) => (
@@ -161,12 +319,16 @@ export default function App() {
               <div className="project-subtitle">{proj.subTitle}</div>
 
               <div className="project-meta">
-                <span>역할: <strong className="project-role">{proj.role}</strong></span>
+                <span>
+                  역할: <strong className="project-role">{proj.role}</strong>
+                </span>
               </div>
 
               <div className="project-tags">
                 {proj.tags.map((tag, tIdx) => (
-                  <span key={tIdx} className="tag">{tag}</span>
+                  <span key={tIdx} className="tag">
+                    {tag}
+                  </span>
                 ))}
               </div>
 
